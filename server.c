@@ -13,108 +13,159 @@
 typedef struct {
     int sock;
     char name[NAME_LEN];
-    int named; // 0 - имя ещё не введено, 1 - уже есть
+    int named;
 } Client;
 
-int main() {
-    int server_fd, client_fd, max_sd, activity;
-    struct sockaddr_in server_addr, client_addr;
-    socklen_t addr_len = sizeof(client_addr);
-    char buffer[BUF_SIZE];
-    fd_set readfds;
 
+static void server_run(void);
+static int  server_socket_create(void);
+static void clients_init(Client clients[]);
+static void server_loop(int server_fd, Client clients[]);
+static void fdset_build(int server_fd, Client clients[], fd_set *set, int *max_sd);
+static void accept_client(int server_fd, Client clients[]);
+static void handle_clients(Client clients[], fd_set *set);
+static void handle_client_message(Client clients[], int i);
+static void client_disconnect(Client *c);
+static void broadcast(Client clients[], const char *msg, int except);
+
+
+
+int main(void) {
+    server_run();
+    return 0;
+}
+
+
+
+static void server_run(void) {
+    int server_fd = server_socket_create();
     Client clients[MAX_CLIENTS];
+
+    clients_init(clients);
+
+    printf("Chat server started on port %d\n", PORT);
+    server_loop(server_fd, clients);
+}
+
+static int server_socket_create(void) {
+    int fd;
+    struct sockaddr_in addr;
+
+    fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (fd < 0) { perror("socket"); exit(1); }
+
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = INADDR_ANY;
+    addr.sin_port = htons(PORT);
+
+    if (bind(fd, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
+        perror("bind"); exit(1);
+    }
+
+    if (listen(fd, 5) < 0) {
+        perror("listen"); exit(1);
+    }
+
+    return fd;
+}
+
+static void clients_init(Client clients[]) {
     for (int i = 0; i < MAX_CLIENTS; i++) {
         clients[i].sock = 0;
         clients[i].named = 0;
     }
+}
 
-    // создаём сокет
-    if ((server_fd = socket(AF_INET, SOCK_STREAM, 0)) == 0) {
-        perror("socket"); exit(1);
-    }
-
-    // привязываем сокет
-    server_addr.sin_family = AF_INET;
-    server_addr.sin_addr.s_addr = INADDR_ANY;
-    server_addr.sin_port = htons(PORT);
-
-    if (bind(server_fd, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
-        perror("bind"); exit(1);
-    }
-
-    if (listen(server_fd, 5) < 0) {
-        perror("listen"); exit(1);
-    }
-
-    printf("Chat server started on port %d\n", PORT);
+static void server_loop(int server_fd, Client clients[]) {
+    fd_set readfds;
 
     while (1) {
+        int max_sd;
         FD_ZERO(&readfds);
-        FD_SET(server_fd, &readfds);
-        max_sd = server_fd;
 
-        for (int i = 0; i < MAX_CLIENTS; i++) {
-            int sd = clients[i].sock;
-            if (sd > 0) FD_SET(sd, &readfds);
-            if (sd > max_sd) max_sd = sd;
+        fdset_build(server_fd, clients, &readfds, &max_sd);
+        select(max_sd + 1, &readfds, NULL, NULL, NULL);
+
+        if (FD_ISSET(server_fd, &readfds))
+            accept_client(server_fd, clients);
+
+        handle_clients(clients, &readfds);
+    }
+}
+
+static void fdset_build(int server_fd, Client clients[], fd_set *set, int *max_sd) {
+    FD_SET(server_fd, set);
+    *max_sd = server_fd;
+
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+        if (clients[i].sock > 0) {
+            FD_SET(clients[i].sock, set);
+            if (clients[i].sock > *max_sd)
+                *max_sd = clients[i].sock;
         }
+    }
+}
 
-        activity = select(max_sd + 1, &readfds, NULL, NULL, NULL);
+static void accept_client(int server_fd, Client clients[]) {
+    struct sockaddr_in addr;
+    socklen_t len = sizeof(addr);
+    int fd = accept(server_fd, (struct sockaddr*)&addr, &len);
 
-        // новое подключение
-        if (FD_ISSET(server_fd, &readfds)) {
-            client_fd = accept(server_fd, (struct sockaddr*)&client_addr, &addr_len);
-            printf("New client connected: %d\n", client_fd);
-
-            for (int i = 0; i < MAX_CLIENTS; i++) {
-                if (clients[i].sock == 0) {
-                    clients[i].sock = client_fd;
-                    clients[i].named = 0;
-                    send(client_fd, "Enter your name: ", 17, 0);
-                    break;
-                }
-            }
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+        if (clients[i].sock == 0) {
+            clients[i].sock = fd;
+            clients[i].named = 0;
+            send(fd, "Enter your name: ", 17, 0);
+            return;
         }
+    }
 
-        // обработка сообщений
-        for (int i = 0; i < MAX_CLIENTS; i++) {
-            int sd = clients[i].sock;
-            if (sd > 0 && FD_ISSET(sd, &readfds)) {
-                int n = read(sd, buffer, BUF_SIZE);
-                if (n <= 0) {
-                    printf("Client disconnected: %d\n", sd);
-                    close(sd);
-                    clients[i].sock = 0;
-                    clients[i].named = 0;
-                } else {
-                    buffer[n] = '\0';
+    close(fd);
+}
 
-                    if (!clients[i].named) {
-                        strncpy(clients[i].name, buffer, NAME_LEN-1);
-                        clients[i].name[strcspn(clients[i].name, "\n")] = '\0'; // убрать \n
-                        clients[i].named = 1;
+static void handle_clients(Client clients[], fd_set *set) {
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+        if (clients[i].sock > 0 && FD_ISSET(clients[i].sock, set))
+            handle_client_message(clients, i);
+    }
+}
 
-                        char msg[BUF_SIZE];
-                        snprintf(msg, BUF_SIZE, "[SERVER] %s joined the chat\n", clients[i].name);
+static void handle_client_message(Client clients[], int i) {
+    char buffer[BUF_SIZE];
+    int n = read(clients[i].sock, buffer, BUF_SIZE - 1);
 
-                        for (int j = 0; j < MAX_CLIENTS; j++) {
-                            if (clients[j].sock > 0) send(clients[j].sock, msg, strlen(msg), 0);
-                        }
-                    } else {
-                        char msg[BUF_SIZE];
-                        snprintf(msg, BUF_SIZE, "[%s] %s", clients[i].name, buffer);
+    if (n <= 0) {
+        client_disconnect(&clients[i]);
+        return;
+    }
 
-                        printf("%s", msg);
+    buffer[n] = '\0';
 
-                        for (int j = 0; j < MAX_CLIENTS; j++) {
-                            if (clients[j].sock > 0 && j != i) {
-                                send(clients[j].sock, msg, strlen(msg), 0);
-                            }
-                        }
-                    }
-                }
-            }
-        }
+    if (!clients[i].named) {
+        strncpy(clients[i].name, buffer, NAME_LEN - 1);
+        clients[i].name[strcspn(clients[i].name, "\n")] = '\0';
+        clients[i].named = 1;
+
+        char msg[BUF_SIZE];
+        snprintf(msg, BUF_SIZE, "[SERVER] %s joined the chat\n", clients[i].name);
+        broadcast(clients, msg, -1);
+    } else {
+        char msg[BUF_SIZE];
+        snprintf(msg, BUF_SIZE, "[%s] %s", clients[i].name, buffer);
+        broadcast(clients, msg, i);
+    }
+}
+
+static void client_disconnect(Client *c) {
+    printf("Client disconnected: %d\n", c->sock);
+    close(c->sock);
+    c->sock = 0;
+    c->named = 0;
+}
+
+static void broadcast(Client clients[], const char *msg, int except) {
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+        if (clients[i].sock > 0 && i != except)
+            send(clients[i].sock, msg, strlen(msg), 0);
     }
 }

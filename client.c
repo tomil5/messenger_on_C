@@ -8,14 +8,28 @@
 #define PORT 5000
 #define BUF_SIZE 1024
 
-int main() {
+static void client_run(void);
+static int connect_to_server(void);
+static void chat_loop(int sockfd);
+
+int main(void) {
+    client_run();
+    return 0;
+}
+
+static void client_run(void) {
+    int sockfd = connect_to_server();
+    printf("Connected to chat.");
+    chat_loop(sockfd);
+}
+
+static int connect_to_server(void) {
     int sockfd;
     struct sockaddr_in server_addr;
-    char buffer[BUF_SIZE];
-    fd_set readfds;
 
     if ((sockfd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
-        perror("socket"); exit(1);
+        perror("socket");
+        exit(1);
     }
 
     server_addr.sin_family = AF_INET;
@@ -23,14 +37,22 @@ int main() {
 
     // укажи IP сервера в локальной сети (например "192.168.1.10")
     if (inet_pton(AF_INET, "192.168.0.63", &server_addr.sin_addr) <= 0) {
-        perror("inet_pton"); exit(1);
+        perror("inet_pton"); 
+        exit(1);
     }
 
     if (connect(sockfd, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
-        perror("connect"); exit(1);
+        perror("connect"); 
+        exit(1);
     }
+    return sockfd; 
+}
 
-    printf("Connected to chat.\n");
+
+static void chat_loop(int sockfd) {
+
+    fd_set readfds;
+    char buffer[BUF_SIZE];
 
     while (1) {
         FD_ZERO(&readfds);
@@ -39,7 +61,6 @@ int main() {
 
         int max_sd = sockfd > STDIN_FILENO ? sockfd : STDIN_FILENO;
         select(max_sd + 1, &readfds, NULL, NULL, NULL);
-
         if (FD_ISSET(sockfd, &readfds)) {
             int n = read(sockfd, buffer, BUF_SIZE);
             if (n <= 0) {
@@ -56,4 +77,5 @@ int main() {
             send(sockfd, buffer, strlen(buffer), 0);
         }
     }
+
 }

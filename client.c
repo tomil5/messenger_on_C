@@ -19,7 +19,8 @@ int main(void) {
 
 static void client_run(void) {
     int sockfd = connect_to_server();
-    printf("Connected to chat.");
+    printf("Connected to chat. \n");
+    printf("Enter your name: \n");
     chat_loop(sockfd);
 }
 
@@ -36,7 +37,7 @@ static int connect_to_server(void) {
     server_addr.sin_port = htons(PORT);
 
     // укажи IP сервера в локальной сети (например "192.168.1.10")
-    if (inet_pton(AF_INET, "192.168.0.63", &server_addr.sin_addr) <= 0) {
+    if (inet_pton(AF_INET, "127.0.0.1", &server_addr.sin_addr) <= 0) {
         perror("inet_pton"); 
         exit(1);
     }

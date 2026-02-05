@@ -115,7 +115,7 @@ static void accept_client(int server_fd, Client clients[]) {
         if (clients[i].sock == 0) {
             clients[i].sock = fd;
             clients[i].named = 0;
-            send(fd, "Enter your name: ", 17, 0);
+            send(fd, "Welcome!", 17, 0);
             return;
         }
     }
@@ -156,11 +156,11 @@ static void handle_client_message(Client clients[], int i) {
     }
 }
 
-static void client_disconnect(Client *c) {
-    printf("Client disconnected: %d\n", c->sock);
-    close(c->sock);
-    c->sock = 0;
-    c->named = 0;
+static void client_disconnect(Client *client) {
+    printf("Client disconnected: %d\n", client->sock);
+    close(client->sock);
+    client->sock = 0;
+    client->named = 0;
 }
 
 static void broadcast(Client clients[], const char *msg, int except) {

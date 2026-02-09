@@ -13,8 +13,7 @@
 # Binaries
 *.o
 *.exe
-server
-client
+
 
 # Логи
 *.log

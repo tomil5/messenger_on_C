@@ -1,19 +1,1 @@
-# VS Code
-.vscode/
 
-# JetBrains IDE (CLion, IntelliJ, PyCharm)
-.idea/
-
-# MacOS
-.DS_Store
-
-# Linux
-*~
-
-# Binaries
-*.o
-*.exe
-
-
-# Логи
-*.log

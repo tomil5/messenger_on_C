@@ -1,9 +1,4 @@
-#include "../common/message.h"
-
-typedef struct {
-    int sock;
-    char name[MAX_NAME];
-} Client;
+#include "dispatcher.h"
 
 void handle_hello(Client[], Client *, Message *);
 void handle_chat(Client[], Client *, Message *);

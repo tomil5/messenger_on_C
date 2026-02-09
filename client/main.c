@@ -1,4 +1,4 @@
-#include "client_loop.c"
+#include "client_loop.h"
 
 int main(void) {
     client_start();

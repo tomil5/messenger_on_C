@@ -1,5 +1,4 @@
-#include "../config.h"
-#include "server_loop.c"
+#include "server_loop.h"
 
 int main(void) {
     server_start();
